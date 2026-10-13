@@ -5,7 +5,7 @@ import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft, FileJson, Info } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 const promptJson = `Você é especialista em analisar editais e estruturar conteúdos para uma plataforma de preparação para concursos.
 
@@ -49,9 +49,8 @@ export default function Concurso() {
     });
     const [instructionsOpen, setInstructionsOpen] = useState(false);
     const [uploadError, setUploadError] = useState('');
-    const [selectedJsonFile, setSelectedJsonFile] = useState<File | null>(null);
+    const [structureJson, setStructureJson] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
@@ -65,12 +64,22 @@ export default function Concurso() {
         e.preventDefault();
 
         setUploadError('');
+        router.post(route('concurso.create'), formData, {
+            onStart: () => setIsSubmitting(true),
+            onFinish: () => setIsSubmitting(false),
+        });
+    };
 
-        if (!selectedJsonFile) {
-            router.post(route('concurso.create'), formData, {
-                onStart: () => setIsSubmitting(true),
-                onFinish: () => setIsSubmitting(false),
-            });
+    const handleStructureImport = () => {
+        setUploadError('');
+
+        if (!formData.titulo.trim() || !formData.data_concurso) {
+            setUploadError('Preencha o nome e a data do concurso antes de importar a estrutura.');
+            return;
+        }
+
+        if (!structureJson.trim()) {
+            setUploadError('Cole o JSON da estrutura no campo de texto antes de salvar.');
             return;
         }
 
@@ -78,28 +87,21 @@ export default function Concurso() {
             route('concurso.import-structure'),
             {
                 ...formData,
-                arquivo_json: selectedJsonFile,
+                estrutura_json: structureJson,
             },
             {
-                forceFormData: true,
                 onStart: () => setIsSubmitting(true),
                 onError: (errors) => {
-                    setUploadError(errors.arquivo_json ?? 'Não foi possível importar o arquivo. Confira os dados e tente novamente.');
+                    setUploadError(
+                        errors.titulo ??
+                            errors.data_concurso ??
+                            errors.estrutura_json ??
+                            'Não foi possível importar a estrutura. Confira os dados e tente novamente.',
+                    );
                 },
                 onFinish: () => setIsSubmitting(false),
             },
         );
-    };
-
-    const handleJsonSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-
-        if (file) {
-            setSelectedJsonFile(file);
-            setUploadError('');
-        }
-
-        e.target.value = '';
     };
 
     return (
@@ -131,17 +133,9 @@ export default function Concurso() {
                     footerStart={
                         <div className="flex flex-col gap-3">
                             <div className="flex flex-wrap items-center gap-3">
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".json,application/json"
-                                    className="sr-only"
-                                    onChange={handleJsonSelection}
-                                    aria-label="Selecionar arquivo JSON"
-                                />
-                                <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => fileInputRef.current?.click()}>
+                                <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => setInstructionsOpen(true)}>
                                     <FileJson />
-                                    Importar estrutura JSON
+                                    Colar estrutura JSON
                                 </Button>
                                 <Button
                                     type="button"
@@ -152,12 +146,6 @@ export default function Concurso() {
                                     Como preparar o JSON
                                 </Button>
                             </div>
-                            {selectedJsonFile && <p className="text-muted-foreground text-sm">Arquivo selecionado: {selectedJsonFile.name}</p>}
-                            {uploadError && (
-                                <p role="alert" className="text-destructive max-w-md text-sm">
-                                    {uploadError}
-                                </p>
-                            )}
                         </div>
                     }
                     onSubmit={handleSubmit}
@@ -168,7 +156,7 @@ export default function Concurso() {
                     <DialogHeader>
                         <DialogTitle>Como preparar a estrutura do concurso</DialogTitle>
                         <DialogDescription>
-                            Gere o arquivo estrutura.json a partir do edital e importe-o junto com o cadastro do concurso.
+                            Gere a estrutura a partir do edital, cole o JSON completo no campo abaixo e salve junto com o concurso.
                         </DialogDescription>
                     </DialogHeader>
 
@@ -180,7 +168,7 @@ export default function Concurso() {
                                 <li>
                                     Escolha uma vaga específica do edital e substitua <code>[VAGA ESCOLHIDA]</code> no prompt.
                                 </li>
-                                </ul>
+                            </ul>
                         </div>
 
                         <section className="space-y-2">
@@ -194,10 +182,40 @@ export default function Concurso() {
                         </section>
 
                         <p className="text-muted-foreground rounded-lg border p-4">
-                            Depois de receber o JSON, salve-o como <code>estrutura.json</code>. Preencha o nome e a data do concurso, clique em{' '}
-                                <strong>Importar estrutura JSON</strong> para selecionar o arquivo. Depois, clique em <strong>Salvar</strong> para criar o
-                                concurso e associar as matérias e conteúdos automaticamente.
+                            Depois de receber o JSON, copie-o completo e cole no campo abaixo. Preencha o nome e a data do concurso; ao salvar, o
+                            sistema valida a estrutura e associa as matérias e conteúdos automaticamente.
                         </p>
+
+                        <div className="space-y-2">
+                            <label htmlFor="estrutura-json" className="font-medium">
+                                JSON da estrutura
+                            </label>
+                            <textarea
+                                id="estrutura-json"
+                                value={structureJson}
+                                onChange={(event) => {
+                                    setStructureJson(event.target.value);
+                                    setUploadError('');
+                                }}
+                                placeholder={'{\n  "materias": []\n}'}
+                                rows={14}
+                                spellCheck={false}
+                                className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-72 w-full resize-y rounded-md border px-3 py-2 font-mono text-xs shadow-xs outline-none focus-visible:ring-[3px]"
+                            />
+                        </div>
+
+                        {uploadError && (
+                            <p role="alert" className="text-destructive text-sm">
+                                {uploadError}
+                            </p>
+                        )}
+
+                        <div className="flex justify-end">
+                            <Button type="button" disabled={isSubmitting} onClick={handleStructureImport}>
+                                <FileJson />
+                                {isSubmitting ? 'Salvando...' : 'Salvar concurso e importar estrutura'}
+                            </Button>
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>

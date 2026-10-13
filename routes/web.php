@@ -24,13 +24,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/adicionar-concurso', function () {
         return Inertia::render('concurso/concursoform');
     })->name('addConcurso');
-    Route::get('/home-concurso', function () {
-        return Inertia::render('concurso/page');
-    })->name('addConcurso');
-
     Route::prefix('concurso')->group(function () {
         Route::post('/', [ConcursoController::class, 'create'])->name('concurso.create');
         Route::post('/importar-estrutura', [ConcursoController::class, 'importStructure'])->name('concurso.import-structure');
+        Route::get('/{concurso}', [ConcursoController::class, 'show'])->name('concurso.show');
+        Route::post('/{concurso}/importar-questoes', [ConcursoController::class, 'importQuestions'])->name('concurso.import-questions');
         Route::get('/', [ConcursoController::class, 'index'])->name('concurso.index');
     });
 });

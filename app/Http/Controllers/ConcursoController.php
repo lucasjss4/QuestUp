@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Alternativa;
 use App\Models\Concurso;
 use App\Models\ConcursoConteudo;
 use App\Models\Conteudo;
 use App\Models\Materia;
+use App\Models\Questao;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
-use JsonException;
+use Inertia\Inertia;
 
 class ConcursoController extends Controller
 {
@@ -49,36 +51,14 @@ class ConcursoController extends Controller
         $validated = $request->validate([
             'titulo' => 'required|string|max:255',
             'data_concurso' => 'required|date',
-            'arquivo_json' => 'required|file|max:10240',
+            'estrutura_json' => 'required|string|max:10485760',
         ]);
 
-        $file = $request->file('arquivo_json');
-
-        if (strtolower($file->getClientOriginalExtension()) !== 'json') {
-            throw ValidationException::withMessages([
-                'arquivo_json' => 'Selecione um arquivo com a extensão .json.',
-            ]);
-        }
-
-        $json = file_get_contents($file->getRealPath());
-
-        if ($json === false) {
-            throw ValidationException::withMessages([
-                'arquivo_json' => 'Não foi possível ler o arquivo enviado.',
-            ]);
-        }
-
-        try {
-            $structure = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            throw ValidationException::withMessages([
-                'arquivo_json' => 'O arquivo não contém um JSON válido.',
-            ]);
-        }
+        $structure = $this->decodeJsonInput($validated['estrutura_json'], 'estrutura_json');
 
         if (! is_array($structure) || array_is_list($structure) || count($structure) !== 1 || ! array_key_exists('materias', $structure)) {
             throw ValidationException::withMessages([
-                'arquivo_json' => 'O JSON deve ser um objeto contendo somente a propriedade "materias".',
+                'estrutura_json' => 'O JSON deve ser um objeto contendo somente a propriedade "materias".',
             ]);
         }
 
@@ -86,7 +66,7 @@ class ConcursoController extends Controller
 
         if (! is_array($materias) || ! array_is_list($materias)) {
             throw ValidationException::withMessages([
-                'arquivo_json' => 'A propriedade "materias" deve ser uma lista.',
+                'estrutura_json' => 'A propriedade "materias" deve ser uma lista.',
             ]);
         }
 
@@ -99,7 +79,7 @@ class ConcursoController extends Controller
 
             if (! array_is_list($materia['conteudos'])) {
                 throw ValidationException::withMessages([
-                    'arquivo_json' => 'Os conteúdos de cada matéria devem estar em uma lista.',
+                    'estrutura_json' => 'Os conteúdos de cada matéria devem estar em uma lista.',
                 ]);
             }
 
@@ -110,7 +90,7 @@ class ConcursoController extends Controller
 
                 if (isset($contentCodes[$conteudo['codigo']])) {
                     throw ValidationException::withMessages([
-                        'arquivo_json' => "O código de conteúdo \"{$conteudo['codigo']}\" aparece mais de uma vez no JSON.",
+                        'estrutura_json' => "O código de conteúdo \"{$conteudo['codigo']}\" aparece mais de uma vez no JSON.",
                     ]);
                 }
 
@@ -136,7 +116,7 @@ class ConcursoController extends Controller
 
         if ($structureValidator->fails()) {
             throw ValidationException::withMessages([
-                'arquivo_json' => 'Confira a estrutura do JSON: matérias e conteúdos precisam ter código, nome e descrição.',
+                'estrutura_json' => 'Confira a estrutura do JSON: matérias e conteúdos precisam ter código, nome e descrição.',
             ]);
         }
 
@@ -165,7 +145,7 @@ class ConcursoController extends Controller
 
                     if ($conteudo->materia_id !== $materia->id) {
                         throw ValidationException::withMessages([
-                            'arquivo_json' => "O código de conteúdo \"{$conteudoData['codigo']}\" já está associado a outra matéria.",
+                            'estrutura_json' => "O código de conteúdo \"{$conteudoData['codigo']}\" já está associado a outra matéria.",
                         ]);
                     }
 
@@ -193,9 +173,125 @@ class ConcursoController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(string $id)
+    public function show(int $concurso)
     {
-        //
+        $concurso = Concurso::query()
+            ->where('user_id', Auth::id())
+            ->with(['concursoConteudo.conteudo' => fn ($query) => $query->with('materia')->withCount('questao')])
+            ->findOrFail($concurso);
+
+        $materias = $concurso->concursoConteudo
+            ->groupBy(fn (ConcursoConteudo $vinculo) => $vinculo->conteudo->materia->id)
+            ->map(function ($vinculos) {
+                $materia = $vinculos->first()->conteudo->materia;
+
+                return [
+                    'id' => $materia->id,
+                    'nome' => $materia->Nome,
+                    'descricao' => $materia->Descricao,
+                    'conteudos_count' => $vinculos->count(),
+                    'questoes_count' => $vinculos->sum(fn (ConcursoConteudo $vinculo) => $vinculo->conteudo->questao_count),
+                    'conteudos' => $vinculos->map(fn (ConcursoConteudo $vinculo) => [
+                        'codigo' => $vinculo->conteudo->Codigo,
+                        'nome' => $vinculo->conteudo->Nome,
+                    ])->values(),
+                ];
+            })
+            ->values();
+
+        return Inertia::render('concurso/page', [
+            'concurso' => $concurso->only(['id', 'titulo', 'data_concurso']),
+            'materias' => $materias,
+            'questoesCount' => $materias->sum('questoes_count'),
+        ]);
+    }
+
+    public function importQuestions(Request $request, int $concurso)
+    {
+        $validated = $request->validate([
+            'questoes_json' => 'required|string|max:10485760',
+        ]);
+
+        $structure = $this->decodeJsonInput($validated['questoes_json'], 'questoes_json');
+
+        if (! is_array($structure) || array_is_list($structure) || count($structure) !== 1 || ! array_key_exists('questoes', $structure)) {
+            throw ValidationException::withMessages([
+                'questoes_json' => 'O JSON deve ser um objeto contendo somente a propriedade "questoes".',
+            ]);
+        }
+
+        $structureValidator = Validator::make($structure, [
+            'questoes' => 'required|array|min:1',
+            'questoes.*' => 'required|array:conteudo_codigo,enunciado,origem,dificuldade,alternativas',
+            'questoes.*.conteudo_codigo' => ['required', 'string', 'max:255', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/'],
+            'questoes.*.enunciado' => 'required|string',
+            'questoes.*.origem' => 'required|string|max:255',
+            'questoes.*.dificuldade' => 'required|string|max:255',
+            'questoes.*.alternativas' => 'required|array|min:2|max:5',
+            'questoes.*.alternativas.*' => 'required|array:opcao,texto,correta',
+            'questoes.*.alternativas.*.opcao' => 'required|string|size:1|in:A,B,C,D,E',
+            'questoes.*.alternativas.*.texto' => 'required|string|max:255',
+            'questoes.*.alternativas.*.correta' => 'required|boolean',
+        ], [
+            'questoes.*.conteudo_codigo.regex' => 'Use o código do conteúdo em minúsculas, sem espaços ou acentos, separando palavras por hífen.',
+        ]);
+
+        if ($structureValidator->fails()) {
+            throw ValidationException::withMessages([
+                'questoes_json' => 'Confira a estrutura do JSON: cada questão precisa ter enunciado, conteúdo, origem, dificuldade e alternativas válidas.',
+            ]);
+        }
+
+        foreach ($structure['questoes'] as $questao) {
+            $optionCodes = array_column($questao['alternativas'], 'opcao');
+            $correctAnswers = count(array_filter($questao['alternativas'], fn (array $alternativa) => (bool) $alternativa['correta']));
+
+            if ($correctAnswers !== 1 || count($optionCodes) !== count(array_unique($optionCodes))) {
+                throw ValidationException::withMessages([
+                    'questoes_json' => 'Cada questão deve ter alternativas identificadas de forma única e exatamente uma resposta correta.',
+                ]);
+            }
+        }
+
+        $concurso = Concurso::query()
+            ->where('user_id', Auth::id())
+            ->with('concursoConteudo.conteudo')
+            ->findOrFail($concurso);
+
+        $conteudos = $concurso->concursoConteudo
+            ->mapWithKeys(fn (ConcursoConteudo $vinculo) => [$vinculo->conteudo->Codigo => $vinculo->conteudo]);
+
+        foreach ($structure['questoes'] as $questao) {
+            if (! $conteudos->has($questao['conteudo_codigo'])) {
+                throw ValidationException::withMessages([
+                    'questoes_json' => "O conteúdo \"{$questao['conteudo_codigo']}\" não pertence a este concurso.",
+                ]);
+            }
+        }
+
+        DB::transaction(function () use ($structure, $conteudos) {
+            foreach ($structure['questoes'] as $questaoData) {
+                $questao = Questao::create([
+                    'Enunciado' => $questaoData['enunciado'],
+                    'origem' => $questaoData['origem'],
+                    'Dificuldade' => $questaoData['dificuldade'],
+                    'conteudo_id' => $conteudos[$questaoData['conteudo_codigo']]->id,
+                ]);
+
+                foreach ($questaoData['alternativas'] as $alternativaData) {
+                    Alternativa::create([
+                        'opcao' => $alternativaData['opcao'],
+                        'texto' => $alternativaData['texto'],
+                        'correta' => $alternativaData['correta'],
+                        'questao_id' => $questao->id,
+                    ]);
+                }
+            }
+        });
+
+        return redirect()
+            ->route('concurso.show', $concurso)
+            ->with('success', 'Questões importadas com sucesso!');
     }
 
     /**
@@ -220,5 +316,33 @@ class ConcursoController extends Controller
     public function destroy(string $id)
     {
         //
+    }
+
+    private function decodeJsonInput(string $text, string $field): mixed
+    {
+        $text = trim($text);
+        $data = json_decode($text, true);
+
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $data;
+        }
+
+        $normalizedText = preg_replace_callback(
+            '~\\\\{2,}"~',
+            static fn () => '\\'.'"',
+            $text,
+        );
+
+        if ($normalizedText !== null && $normalizedText !== $text) {
+            $data = json_decode($normalizedText, true);
+
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $data;
+            }
+        }
+
+        throw ValidationException::withMessages([
+            $field => 'JSON inválido: '.json_last_error_msg(),
+        ]);
     }
 }
