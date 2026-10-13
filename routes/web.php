@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\Concurso;
 use App\Http\Controllers\ConcursoController;
+use App\Models\Concurso;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -21,11 +21,16 @@ Route::middleware(['auth'])->group(function () {
             'concursos' => $concursos,
         ]);
     })->name('homePage');
-    Route::get('/adicionar-concurso', function () { return Inertia::render('concurso/concursoform');})->name('addConcurso');
-    Route::get('/home-concurso', function () { return Inertia::render('concurso/page');})->name('addConcurso');
+    Route::get('/adicionar-concurso', function () {
+        return Inertia::render('concurso/concursoform');
+    })->name('addConcurso');
+    Route::get('/home-concurso', function () {
+        return Inertia::render('concurso/page');
+    })->name('addConcurso');
 
     Route::prefix('concurso')->group(function () {
         Route::post('/', [ConcursoController::class, 'create'])->name('concurso.create');
+        Route::post('/importar-estrutura', [ConcursoController::class, 'importStructure'])->name('concurso.import-structure');
         Route::get('/', [ConcursoController::class, 'index'])->name('concurso.index');
     });
 });

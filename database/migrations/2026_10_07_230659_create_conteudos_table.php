@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('Nome');
             $table->string('Descricao');
+            $table->string('Codigo')->unique();
             $table->unsignedBigInteger('materia_id');
 
             $table->foreign('materia_id')->references('id')->on('materias');

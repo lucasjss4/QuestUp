@@ -28,6 +28,7 @@ type FormCardProps = {
     onCancel?: () => void;
     className?: string;
     submitDisabled?: boolean;
+    footerStart?: React.ReactNode;
 };
 
 export function FormCard({
@@ -40,6 +41,7 @@ export function FormCard({
     onCancel,
     className,
     submitDisabled = false,
+    footerStart,
 }: FormCardProps) {
     return (
         <Card className={cn('w-full max-w-2xl', className)}>
@@ -68,16 +70,20 @@ export function FormCard({
                     ))}
                 </CardContent>
 
-                <CardFooter className="flex justify-end gap-3">
-                    {onCancel ? (
-                        <Button type="button" variant="outline" onClick={onCancel}>
-                            {cancelLabel}
-                        </Button>
-                    ) : null}
+                <CardFooter className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    {footerStart}
 
-                    <Button type="submit" disabled={submitDisabled}>
-                        {submitLabel}
-                    </Button>
+                    <div className="flex justify-end gap-3">
+                        {onCancel ? (
+                            <Button type="button" variant="outline" onClick={onCancel}>
+                                {cancelLabel}
+                            </Button>
+                        ) : null}
+
+                        <Button type="submit" disabled={submitDisabled}>
+                            {submitLabel}
+                        </Button>
+                    </div>
                 </CardFooter>
             </form>
         </Card>

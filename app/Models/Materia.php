@@ -9,6 +9,7 @@ class Materia extends Model
     protected $fillable = [
         'Nome',
         'Descricao',
+        'Codigo',
     ];
 
     public function conteudo()

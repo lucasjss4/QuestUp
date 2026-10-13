@@ -9,6 +9,7 @@ class Conteudo extends Model
     protected $fillable = [
         'Nome',
         'Descricao',
+        'Codigo',
         'materia_id',
     ];
 
