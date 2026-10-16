@@ -9,7 +9,16 @@ class Simulado extends Model
     protected $fillable = [
         'data_realizacao',
         'concurso_id',
+        'concluido_em',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'data_realizacao' => 'date',
+            'concluido_em' => 'datetime',
+        ];
+    }
 
     public function concurso()
     {
@@ -20,5 +29,4 @@ class Simulado extends Model
     {
         return $this->hasMany(SimuladoQuestao::class, 'simulado_id');
     }
-
 }

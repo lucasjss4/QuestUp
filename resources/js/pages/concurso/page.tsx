@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
@@ -63,6 +64,10 @@ export default function ConcursoPage({ concurso, materias, questoesCount }: Conc
     const [isImporting, setIsImporting] = useState(false);
     const [promptCopied, setPromptCopied] = useState(false);
     const [copyError, setCopyError] = useState('');
+    const [simuladoOpen, setSimuladoOpen] = useState(false);
+    const [quantidades, setQuantidades] = useState<Record<number, number>>({});
+    const [simuladoError, setSimuladoError] = useState('');
+    const [isStartingSimulado, setIsStartingSimulado] = useState(false);
     const promptWithContentCodes = `${questionPrompt}
 
 Códigos de conteúdo disponíveis para usar no campo "conteudo_codigo":
@@ -114,6 +119,41 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
         }
     };
 
+    const openSimulado = (materiaId?: number) => {
+        setQuantidades(Object.fromEntries(materias.map((materia) => [materia.id, materia.id === materiaId ? 1 : 0])));
+        setSimuladoError('');
+        setSimuladoOpen(true);
+    };
+
+    const handleStartSimulado = () => {
+        const total = Object.values(quantidades).reduce((sum, quantidade) => sum + quantidade, 0);
+
+        if (total < 1) {
+            setSimuladoError('Informe pelo menos uma questão para iniciar o simulado.');
+            return;
+        }
+
+        const exceedsAvailable = materias.some((materia) => (quantidades[materia.id] ?? 0) > materia.questoes_count);
+
+        if (exceedsAvailable) {
+            setSimuladoError('A quantidade solicitada não pode ultrapassar as questões disponíveis em cada matéria.');
+            return;
+        }
+
+        setSimuladoError('');
+        router.post(
+            route('concurso.simulado.start', concurso.id),
+            { quantidades },
+            {
+                onStart: () => setIsStartingSimulado(true),
+                onError: (errors) => {
+                    setSimuladoError(errors.quantidades ?? 'Não foi possível iniciar o simulado. Confira as quantidades e tente novamente.');
+                },
+                onFinish: () => setIsStartingSimulado(false),
+            },
+        );
+    };
+
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title={concurso.titulo} />
@@ -151,11 +191,17 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                                 {questoesCount === 1 ? '1 questão cadastrada no concurso' : `${questoesCount} questões cadastradas no concurso`}
                             </CardDescription>
                         </div>
-                        <Button disabled title="A criação de simulados estará disponível em breve.">
-                            <Play />
-                            Fazer simulado geral
-                            <span className="text-xs opacity-75">Em breve</span>
-                        </Button>
+                        {questoesCount > 0 ? (
+                            <Button onClick={() => openSimulado()}>
+                                <Play />
+                                Fazer simulado geral
+                            </Button>
+                        ) : (
+                            <Button disabled>
+                                <Play />
+                                Fazer simulado geral
+                            </Button>
+                        )}
                     </CardHeader>
                 </Card>
 
@@ -184,15 +230,17 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                                         </p>
                                     </CardContent>
                                     <CardFooter>
-                                        <Button
-                                            className="w-full"
-                                            variant="outline"
-                                            disabled
-                                            title="A criação de simulados estará disponível em breve."
-                                        >
-                                            <Play />
-                                            Fazer simulado desta matéria
-                                        </Button>
+                                        {materia.questoes_count > 0 ? (
+                                            <Button className="w-full" variant="outline" onClick={() => openSimulado(materia.id)}>
+                                                <Play />
+                                                Fazer simulado desta matéria
+                                            </Button>
+                                        ) : (
+                                            <Button className="w-full" variant="outline" disabled>
+                                                <Play />
+                                                Fazer simulado desta matéria
+                                            </Button>
+                                        )}
                                     </CardFooter>
                                 </Card>
                             ))}
@@ -209,6 +257,63 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                     )}
                 </section>
             </div>
+
+            <Dialog open={simuladoOpen} onOpenChange={setSimuladoOpen}>
+                <DialogContent className="sm:max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Configurar simulado</DialogTitle>
+                        <DialogDescription>Defina quantas questões aleatórias deseja responder em cada matéria.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
+                            {materias.map((materia) => (
+                                <div key={materia.id} className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium">{materia.nome}</p>
+                                        <p className="text-muted-foreground text-xs">
+                                            {materia.questoes_count} {materia.questoes_count === 1 ? 'questão disponível' : 'questões disponíveis'}
+                                        </p>
+                                    </div>
+                                    <div className="w-24 shrink-0">
+                                        <label htmlFor={`quantidade-${materia.id}`} className="sr-only">
+                                            Quantidade de questões de {materia.nome}
+                                        </label>
+                                        <Input
+                                            id={`quantidade-${materia.id}`}
+                                            type="number"
+                                            min={0}
+                                            max={materia.questoes_count}
+                                            step={1}
+                                            value={quantidades[materia.id] ?? 0}
+                                            disabled={materia.questoes_count === 0 || isStartingSimulado}
+                                            onChange={(event) => {
+                                                const value = event.target.value === '' ? 0 : Number(event.target.value);
+                                                setQuantidades((current) => ({ ...current, [materia.id]: value }));
+                                                setSimuladoError('');
+                                            }}
+                                            aria-label={`Quantidade de questões de ${materia.nome}`}
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {simuladoError && (
+                            <p role="alert" className="text-destructive text-sm">
+                                {simuladoError}
+                            </p>
+                        )}
+                        <div className="flex justify-end">
+                            <Button
+                                onClick={handleStartSimulado}
+                                disabled={isStartingSimulado || materias.every((materia) => materia.questoes_count === 0)}
+                            >
+                                <Play />
+                                {isStartingSimulado ? 'Preparando simulado...' : 'Iniciar simulado'}
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={importOpen} onOpenChange={setImportOpen}>
                 <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">

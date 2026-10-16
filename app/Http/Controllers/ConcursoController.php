@@ -8,6 +8,8 @@ use App\Models\ConcursoConteudo;
 use App\Models\Conteudo;
 use App\Models\Materia;
 use App\Models\Questao;
+use App\Models\Simulado;
+use App\Models\SimuladoQuestao;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -175,9 +177,19 @@ class ConcursoController extends Controller
      */
     public function show(int $concurso)
     {
+        $concursoId = $concurso;
         $concurso = Concurso::query()
             ->where('user_id', Auth::id())
-            ->with(['concursoConteudo.conteudo' => fn ($query) => $query->with('materia')->withCount('questao')])
+            ->with([
+                'concursoConteudo.conteudo' => fn ($query) => $query
+                    ->with('materia')
+                    ->withCount([
+                        'questao' => fn ($query) => $query->whereHas(
+                            'conteudo.concursoConteudo',
+                            fn ($query) => $query->where('concurso_id', $concursoId),
+                        ),
+                    ]),
+            ])
             ->findOrFail($concurso);
 
         $materias = $concurso->concursoConteudo
@@ -204,6 +216,201 @@ class ConcursoController extends Controller
             'materias' => $materias,
             'questoesCount' => $materias->sum('questoes_count'),
         ]);
+    }
+
+    public function startPractice(Request $request, int $concurso)
+    {
+        $validated = $request->validate([
+            'quantidades' => 'required|array|min:1',
+            'quantidades.*' => 'required|integer|min:0',
+        ]);
+
+        $concurso = Concurso::query()
+            ->where('user_id', Auth::id())
+            ->with('concursoConteudo.conteudo')
+            ->findOrFail($concurso);
+
+        $materiaIds = $concurso->concursoConteudo
+            ->map(fn (ConcursoConteudo $vinculo) => $vinculo->conteudo->materia_id)
+            ->unique()
+            ->values();
+        $quantidades = collect($validated['quantidades'])
+            ->mapWithKeys(fn ($quantidade, $materiaId) => [(int) $materiaId => (int) $quantidade]);
+
+        if ($quantidades->keys()->diff($materiaIds)->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'quantidades' => 'Uma ou mais matérias selecionadas não pertencem a este concurso.',
+            ]);
+        }
+
+        if ($quantidades->sum() < 1) {
+            throw ValidationException::withMessages([
+                'quantidades' => 'Selecione pelo menos uma questão para iniciar o simulado.',
+            ]);
+        }
+
+        $simulado = DB::transaction(function () use ($concurso, $quantidades) {
+            $simulado = Simulado::create([
+                'data_realizacao' => now()->toDateString(),
+                'concurso_id' => $concurso->id,
+            ]);
+
+            foreach ($quantidades->filter(fn (int $quantidade) => $quantidade > 0) as $materiaId => $quantidade) {
+                $questoes = Questao::query()
+                    ->whereHas('conteudo.concursoConteudo', fn ($query) => $query->where('concurso_id', $concurso->id))
+                    ->whereHas('conteudo', fn ($query) => $query->where('materia_id', $materiaId))
+                    ->inRandomOrder()
+                    ->limit($quantidade)
+                    ->get(['id']);
+
+                if ($questoes->count() !== $quantidade) {
+                    throw ValidationException::withMessages([
+                        'quantidades' => "A matéria selecionada não possui {$quantidade} questões disponíveis.",
+                    ]);
+                }
+
+                foreach ($questoes as $questao) {
+                    SimuladoQuestao::create([
+                        'opcao_marcada' => null,
+                        'acerto' => null,
+                        'questao_id' => $questao->id,
+                        'simulado_id' => $simulado->id,
+                    ]);
+                }
+            }
+
+            return $simulado;
+        });
+
+        return redirect()->route('concurso.simulado.show', [$concurso->id, $simulado->id]);
+    }
+
+    public function practice(int $concurso, int $simulado)
+    {
+        $concurso = Concurso::query()
+            ->where('user_id', Auth::id())
+            ->findOrFail($concurso);
+        $simulado = Simulado::query()
+            ->where('concurso_id', $concurso->id)
+            ->findOrFail($simulado);
+        $respostas = SimuladoQuestao::query()
+            ->where('simulado_id', $simulado->id)
+            ->with(['questao.conteudo.materia', 'questao.alternativa'])
+            ->orderBy('id')
+            ->get();
+        $concluido = $simulado->concluido_em !== null;
+
+        return Inertia::render('concurso/simulado', [
+            'concurso' => $concurso->only(['id', 'titulo']),
+            'simulado' => [
+                'id' => $simulado->id,
+                'concluido' => $concluido,
+            ],
+            'questoes' => $respostas->map(fn (SimuladoQuestao $resposta) => [
+                'id' => $resposta->questao->id,
+                'enunciado' => $resposta->questao->Enunciado,
+                'origem' => $resposta->questao->origem,
+                'dificuldade' => $resposta->questao->Dificuldade,
+                'materia' => $resposta->questao->conteudo->materia->Nome,
+                'resposta' => $resposta->opcao_marcada,
+                'alternativas' => $resposta->questao->alternativa
+                    ->sortBy('opcao')
+                    ->values()
+                    ->map(fn (Alternativa $alternativa) => [
+                        'opcao' => $alternativa->opcao,
+                        'texto' => $alternativa->texto,
+                    ]),
+            ])->values(),
+            'resultados' => $concluido
+                ? $respostas->map(fn (SimuladoQuestao $resposta) => [
+                    'questao_id' => $resposta->questao->id,
+                    'enunciado' => $resposta->questao->Enunciado,
+                    'materia' => $resposta->questao->conteudo->materia->Nome,
+                    'conteudo' => $resposta->questao->conteudo->Nome,
+                    'opcao_marcada' => $resposta->opcao_marcada,
+                    'resposta_marcada' => $resposta->questao->alternativa
+                        ->firstWhere('opcao', $resposta->opcao_marcada)?->texto,
+                    'resposta_correta' => $resposta->questao->alternativa
+                        ->firstWhere('correta', true)?->texto,
+                    'acerto' => $resposta->acerto,
+                ])->values()
+                : [],
+        ]);
+    }
+
+    public function finishPractice(Request $request, int $concurso, int $simulado)
+    {
+        $validated = $request->validate([
+            'respostas' => 'required|array',
+            'respostas.*' => 'required|array:questao_id,opcao_marcada',
+            'respostas.*.questao_id' => 'required|integer|distinct:strict',
+            'respostas.*.opcao_marcada' => 'present|nullable|string|size:1|in:A,B,C,D,E',
+        ]);
+
+        $concurso = Concurso::query()
+            ->where('user_id', Auth::id())
+            ->findOrFail($concurso);
+        $simulado = Simulado::query()
+            ->where('concurso_id', $concurso->id)
+            ->findOrFail($simulado);
+
+        if ($simulado->concluido_em !== null) {
+            throw ValidationException::withMessages([
+                'respostas' => 'Este simulado já foi concluído e não pode ser alterado.',
+            ]);
+        }
+
+        $respostasSimulado = SimuladoQuestao::query()
+            ->where('simulado_id', $simulado->id)
+            ->get()
+            ->keyBy('questao_id');
+        $respostasEnviadas = collect($validated['respostas'])->keyBy('questao_id');
+
+        if (
+            $respostasEnviadas->count() !== $respostasSimulado->count()
+            || $respostasEnviadas->keys()->diff($respostasSimulado->keys())->isNotEmpty()
+        ) {
+            throw ValidationException::withMessages([
+                'respostas' => 'As respostas enviadas não correspondem às questões deste simulado.',
+            ]);
+        }
+
+        $alternativas = Alternativa::query()
+            ->whereIn('questao_id', $respostasSimulado->keys())
+            ->get()
+            ->groupBy('questao_id');
+
+        DB::transaction(function () use ($respostasSimulado, $respostasEnviadas, $alternativas, $simulado) {
+            foreach ($respostasSimulado as $questaoId => $registro) {
+                $opcaoMarcada = $respostasEnviadas[$questaoId]['opcao_marcada'];
+
+                if ($opcaoMarcada === null) {
+                    $registro->update([
+                        'opcao_marcada' => null,
+                        'acerto' => null,
+                    ]);
+
+                    continue;
+                }
+
+                $alternativaMarcada = $alternativas->get($questaoId)?->firstWhere('opcao', $opcaoMarcada);
+
+                if (! $alternativaMarcada) {
+                    throw ValidationException::withMessages([
+                        'respostas' => "A alternativa {$opcaoMarcada} não pertence à questão {$questaoId}.",
+                    ]);
+                }
+
+                $registro->update([
+                    'opcao_marcada' => $opcaoMarcada,
+                    'acerto' => (bool) $alternativaMarcada->correta,
+                ]);
+            }
+
+            $simulado->update(['concluido_em' => now()]);
+        });
+
+        return redirect()->route('concurso.simulado.show', [$concurso->id, $simulado->id]);
     }
 
     public function importQuestions(Request $request, int $concurso)

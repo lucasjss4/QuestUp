@@ -13,14 +13,20 @@ class SimuladoQuestao extends Model
         'simulado_id',
     ];
 
+    protected function casts(): array
+    {
+        return [
+            'acerto' => 'boolean',
+        ];
+    }
+
     public function questao()
     {
         return $this->belongsTo(Questao::class, 'questao_id');
     }
-    
+
     public function simulado()
     {
         return $this->belongsTo(Simulado::class, 'simulado_id');
     }
-
 }

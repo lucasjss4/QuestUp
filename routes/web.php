@@ -27,6 +27,9 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('concurso')->group(function () {
         Route::post('/', [ConcursoController::class, 'create'])->name('concurso.create');
         Route::post('/importar-estrutura', [ConcursoController::class, 'importStructure'])->name('concurso.import-structure');
+        Route::post('/{concurso}/simulado', [ConcursoController::class, 'startPractice'])->name('concurso.simulado.start');
+        Route::get('/{concurso}/simulado/{simulado}', [ConcursoController::class, 'practice'])->name('concurso.simulado.show');
+        Route::post('/{concurso}/simulado/{simulado}/concluir', [ConcursoController::class, 'finishPractice'])->name('concurso.simulado.finish');
         Route::get('/{concurso}', [ConcursoController::class, 'show'])->name('concurso.show');
         Route::post('/{concurso}/importar-questoes', [ConcursoController::class, 'importQuestions'])->name('concurso.import-questions');
         Route::get('/', [ConcursoController::class, 'index'])->name('concurso.index');
