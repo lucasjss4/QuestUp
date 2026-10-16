@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
@@ -228,20 +228,20 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                                             {' · '}
                                             {materia.questoes_count} {materia.questoes_count === 1 ? 'questão' : 'questões'}
                                         </p>
+                                        <div className="mt-4 space-y-2">
+                                            <h3 className="text-sm font-medium">Conteúdos cobrados</h3>
+                                            <ul className="text-muted-foreground max-h-40 space-y-2 overflow-y-auto pr-2 text-sm">
+                                                {materia.conteudos.map((conteudo) => (
+                                                    <li key={conteudo.codigo} className="flex gap-2">
+                                                        <span className="text-primary" aria-hidden="true">
+                                                            •
+                                                        </span>
+                                                        <span>{conteudo.nome}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
                                     </CardContent>
-                                    <CardFooter>
-                                        {materia.questoes_count > 0 ? (
-                                            <Button className="w-full" variant="outline" onClick={() => openSimulado(materia.id)}>
-                                                <Play />
-                                                Fazer simulado desta matéria
-                                            </Button>
-                                        ) : (
-                                            <Button className="w-full" variant="outline" disabled>
-                                                <Play />
-                                                Fazer simulado desta matéria
-                                            </Button>
-                                        )}
-                                    </CardFooter>
                                 </Card>
                             ))}
                         </div>
