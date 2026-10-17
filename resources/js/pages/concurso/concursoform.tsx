@@ -137,14 +137,6 @@ export default function Concurso() {
                                     <FileJson />
                                     Colar estrutura JSON
                                 </Button>
-                                <Button
-                                    type="button"
-                                    className="bg-amber-400 text-amber-950 hover:bg-amber-500"
-                                    onClick={() => setInstructionsOpen(true)}
-                                >
-                                    <Info />
-                                    Como preparar o JSON
-                                </Button>
                             </div>
                         </div>
                     }
