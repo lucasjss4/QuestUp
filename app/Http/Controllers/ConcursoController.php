@@ -29,6 +29,27 @@ class ConcursoController extends Controller
         return view('concurso.index', compact('concursos'));
     }
 
+    public function history()
+    {
+        $simulados = Simulado::query()
+            ->whereNotNull('concluido_em')
+            ->whereHas('concurso', fn ($query) => $query->where('user_id', Auth::id()))
+            ->with('concurso:id,titulo')
+            ->orderByDesc('data_realizacao')
+            ->orderByDesc('id')
+            ->get(['id', 'concurso_id', 'data_realizacao'])
+            ->map(fn (Simulado $simulado) => [
+                'id' => $simulado->id,
+                'concurso_id' => $simulado->concurso_id,
+                'concurso_titulo' => $simulado->concurso->titulo,
+                'data_realizacao' => $simulado->data_realizacao->toDateString(),
+            ]);
+
+        return Inertia::render('historico', [
+            'simulados' => $simulados,
+        ]);
+    }
+
     /**
      * Show the form for creating a new resource.
      */
@@ -285,7 +306,7 @@ class ConcursoController extends Controller
         return redirect()->route('concurso.simulado.show', [$concurso->id, $simulado->id]);
     }
 
-    public function practice(int $concurso, int $simulado)
+    public function practice(Request $request, int $concurso, int $simulado)
     {
         $concurso = Concurso::query()
             ->where('user_id', Auth::id())
@@ -302,6 +323,7 @@ class ConcursoController extends Controller
 
         return Inertia::render('concurso/simulado', [
             'concurso' => $concurso->only(['id', 'titulo']),
+            'voltarParaHistorico' => $request->query('origem') === 'historico',
             'simulado' => [
                 'id' => $simulado->id,
                 'concluido' => $concluido,

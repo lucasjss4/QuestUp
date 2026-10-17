@@ -21,6 +21,7 @@ Route::middleware(['auth'])->group(function () {
             'concursos' => $concursos,
         ]);
     })->name('homePage');
+    Route::get('/historico', [ConcursoController::class, 'history'])->name('historico');
     Route::get('/adicionar-concurso', function () {
         return Inertia::render('concurso/concursoform');
     })->name('addConcurso');

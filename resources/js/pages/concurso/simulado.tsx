@@ -37,6 +37,7 @@ type SimuladoProps = {
         id: number;
         titulo: string;
     };
+    voltarParaHistorico: boolean;
     simulado: {
         id: number;
         concluido: boolean;
@@ -45,7 +46,7 @@ type SimuladoProps = {
     resultados: Resultado[];
 };
 
-export default function SimuladoPage({ concurso, simulado, questoes, resultados }: SimuladoProps) {
+export default function SimuladoPage({ concurso, voltarParaHistorico, simulado, questoes, resultados }: SimuladoProps) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [selectedOption, setSelectedOption] = useState<string | null>(questoes[0]?.resposta ?? null);
     const [answers, setAnswers] = useState<Record<number, string | null>>(() =>
@@ -57,6 +58,7 @@ export default function SimuladoPage({ concurso, simulado, questoes, resultados 
     const questao = questoes[currentIndex];
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Início', href: route('homePage') },
+        ...(voltarParaHistorico ? [{ title: 'Histórico', href: route('historico') }] : []),
         { title: concurso.titulo, href: route('concurso.show', concurso.id) },
         { title: 'Simulado', href: route('concurso.simulado.show', { concurso: concurso.id, simulado: simulado.id }) },
     ];
@@ -136,9 +138,9 @@ export default function SimuladoPage({ concurso, simulado, questoes, resultados 
                 <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col">
                     <div className="mb-6 flex items-center justify-between gap-4">
                         <Button variant="outline" size="sm" asChild>
-                            <Link href={route('concurso.show', concurso.id)}>
+                            <Link href={voltarParaHistorico ? route('historico') : route('concurso.show', concurso.id)}>
                                 <ArrowLeft />
-                                Voltar ao concurso
+                                {voltarParaHistorico ? 'Voltar ao histórico' : 'Voltar ao concurso'}
                             </Link>
                         </Button>
                         {!simulado.concluido && questoes.length > 0 && (
