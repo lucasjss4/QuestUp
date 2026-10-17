@@ -4,7 +4,7 @@ import { FormCard } from '@/components/ui/form-card';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, FileJson, Info } from 'lucide-react';
+import { ArrowLeft, FileJson } from 'lucide-react';
 import { useState } from 'react';
 
 const promptJson = `Você é especialista em analisar editais e estruturar conteúdos para uma plataforma de preparação para concursos.
@@ -135,7 +135,7 @@ export default function Concurso() {
                             <div className="flex flex-wrap items-center gap-3">
                                 <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => setInstructionsOpen(true)}>
                                     <FileJson />
-                                    Colar estrutura JSON
+                                    Adicionar matérias via JSON
                                 </Button>
                             </div>
                         </div>

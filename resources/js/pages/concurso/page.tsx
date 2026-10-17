@@ -31,7 +31,7 @@ type ConcursoPageProps = {
 
 const questionPrompt = `Você é especialista em elaborar questões para concursos públicos com base em editais e materiais de estudo.
 
-Com base no material anexado, gere questões objetivas para os conteúdos informados. Entregue somente um JSON válido seguindo exatamente este formato:
+Com base no edital e no material anexados, gere exatamente a quantidade de questões indicada nos parâmetros, distribuída pelas dificuldades solicitadas. O total nunca pode ser inferior ao número de questões previsto no edital. Entregue somente um JSON válido seguindo exatamente este formato:
 {
   "questoes": [
     {
@@ -54,7 +54,30 @@ Regras obrigatórias:
 - Cada questão deve ter exatamente uma alternativa correta; use true apenas nela e false nas demais.
 - Em "conteudo_codigo", use exatamente o código de um conteúdo existente no concurso.
 - Preencha "origem" com a banca/fonte ou "Questão inédita"; informe a dificuldade como "Fácil", "Média" ou "Difícil".
+- Crie questões originais: não copie literalmente questões de provas anteriores nem reproduza materiais protegidos.
+- Mantenha o estilo, o nível de cobrança e os tipos de enunciado da banca, sem afirmar que uma questão inédita veio de uma prova real.
 - Entregue somente o JSON, sem comentários, introdução, cercas de código ou vírgulas sobrando.`;
+
+const getDifficultyCounts = (total: number, preference: number) => {
+    const position = preference / 50;
+    const weights =
+        preference <= 50
+            ? [1 - 0.75 * position, 0.5 * position, 0.25 * position]
+            : [0.25 * (2 - position), 0.5 * (2 - position), 0.25 + 0.75 * (position - 1)];
+    const exactCounts = weights.map((weight) => total * weight);
+    const counts = exactCounts.map(Math.floor);
+    const remaining = total - counts.reduce((sum, count) => sum + count, 0);
+
+    const remainderOrder = exactCounts
+        .map((count, index) => ({ index, remainder: count - Math.floor(count) }))
+        .sort((first, second) => second.remainder - first.remainder);
+
+    for (let index = 0; index < remaining; index += 1) {
+        counts[remainderOrder[index].index] += 1;
+    }
+
+    return { facil: counts[0], media: counts[1], dificil: counts[2] };
+};
 
 export default function ConcursoPage({ concurso, materias, questoesCount }: ConcursoPageProps) {
     const [importOpen, setImportOpen] = useState(false);
@@ -64,11 +87,27 @@ export default function ConcursoPage({ concurso, materias, questoesCount }: Conc
     const [isImporting, setIsImporting] = useState(false);
     const [promptCopied, setPromptCopied] = useState(false);
     const [copyError, setCopyError] = useState('');
+    const [minimumQuestions, setMinimumQuestions] = useState('');
+    const [difficultyPreference, setDifficultyPreference] = useState(50);
+    const [usePastExams, setUsePastExams] = useState(true);
     const [simuladoOpen, setSimuladoOpen] = useState(false);
     const [quantidades, setQuantidades] = useState<Record<number, number>>({});
     const [simuladoError, setSimuladoError] = useState('');
     const [isStartingSimulado, setIsStartingSimulado] = useState(false);
+    const requestedQuestionCount = Number(minimumQuestions);
+    const difficultyCounts = getDifficultyCounts(
+        Number.isInteger(requestedQuestionCount) && requestedQuestionCount > 0 ? requestedQuestionCount : 0,
+        difficultyPreference,
+    );
+    const difficultyTotal = difficultyCounts.facil + difficultyCounts.media + difficultyCounts.dificil;
     const promptWithContentCodes = `${questionPrompt}
+
+Parâmetros obrigatórios:
+- Número de questões previsto no edital (quantidade mínima): ${minimumQuestions || '[INFORME A QUANTIDADE DO EDITAL]'}.
+- Gere exatamente ${difficultyTotal} questões: ${difficultyCounts.facil} fáceis, ${difficultyCounts.media} médias e ${difficultyCounts.dificil} difíceis.
+${usePastExams
+    ? '- Se tiver acesso à internet, consulte provas anteriores públicas da banca organizadora para reproduzir o perfil e o nível de cobrança. Informe a banca, o ano e a fonte consultada em "origem" somente quando puder verificá-los. Se não tiver acesso, não invente fontes e baseie-se no edital e nos materiais anexados.'
+    : '- Baseie-se somente no edital e nos materiais anexados; não pesquise provas anteriores.'}
 
 Códigos de conteúdo disponíveis para usar no campo "conteudo_codigo":
 ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteudo.codigo}: ${materia.nome} — ${conteudo.nome}`)).join('\n')}`;
@@ -105,6 +144,17 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
 
     const handleCopyPrompt = async () => {
         setCopyError('');
+
+        const minimum = Number(minimumQuestions);
+        if (!Number.isInteger(minimum) || minimum < 1) {
+            setCopyError('Informe a quantidade de questões prevista no edital.');
+            return;
+        }
+
+        if (difficultyTotal < minimum) {
+            setCopyError(`A soma das questões por dificuldade deve ser pelo menos ${minimum}, conforme o edital.`);
+            return;
+        }
 
         if (!navigator.clipboard) {
             setCopyError('Não foi possível acessar a área de transferência neste navegador.');
@@ -319,10 +369,82 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                 <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
                     <DialogHeader>
                         <DialogTitle>Importar questões</DialogTitle>
-                        <DialogDescription>Gere um JSON de questões baseado no edital e nos códigos de conteúdo deste concurso.</DialogDescription>
+                        <DialogDescription>Configure a quantidade, a dificuldade e o estilo das questões antes de copiar o prompt para a IA.</DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-5 text-sm">
+                        <section className="space-y-3 rounded-lg border p-4">
+                            <div className="space-y-1">
+                                <h3 className="text-sm font-medium">Quantidade e nível de dificuldade</h3>
+                                <p className="text-muted-foreground text-sm">
+                                    Informe quantas questões há no edital. Esse será o total gerado. No centro da barra, a distribuição é 25% fáceis, 50% médias e 25% difíceis.
+                                </p>
+                            </div>
+                            <div className="max-w-xs space-y-2">
+                                <label htmlFor="questoes-minimas-edital" className="text-sm font-medium">
+                                    Número de questões do edital
+                                </label>
+                                <Input
+                                    id="questoes-minimas-edital"
+                                    type="number"
+                                    min={1}
+                                    step={1}
+                                    value={minimumQuestions}
+                                    onChange={(event) => {
+                                        setMinimumQuestions(event.target.value);
+                                        setCopyError('');
+                                        setPromptCopied(false);
+                                    }}
+                                />
+                            </div>
+                            <div className="space-y-3">
+                                <label htmlFor="preferencia-dificuldade" className="text-sm font-medium">
+                                    Distribuição da dificuldade
+                                </label>
+                                <input
+                                    id="preferencia-dificuldade"
+                                    type="range"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    value={difficultyPreference}
+                                    onChange={(event) => {
+                                        setDifficultyPreference(Number(event.target.value));
+                                        setCopyError('');
+                                        setPromptCopied(false);
+                                    }}
+                                    aria-valuetext={`${difficultyCounts.facil} fáceis, ${difficultyCounts.media} médias e ${difficultyCounts.dificil} difíceis`}
+                                    className="accent-primary w-full cursor-pointer"
+                                />
+                                <div className="text-muted-foreground flex justify-between text-xs">
+                                    <span>Mais fáceis</span>
+                                    <span>Mais médias</span>
+                                    <span>Mais difíceis</span>
+                                </div>
+                            </div>
+                            <p className="text-muted-foreground text-sm">
+                                Serão geradas {difficultyTotal} {difficultyTotal === 1 ? 'questão' : 'questões'}: {difficultyCounts.facil} fáceis,{' '}
+                                {difficultyCounts.media} médias e {difficultyCounts.dificil} difíceis.
+                            </p>
+                            <label className="flex items-start gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={usePastExams}
+                                    onChange={(event) => {
+                                        setUsePastExams(event.target.checked);
+                                        setPromptCopied(false);
+                                    }}
+                                    className="border-input accent-primary mt-0.5 size-4 shrink-0 rounded"
+                                />
+                                <span>
+                                    <span className="font-medium">Usar provas anteriores públicas como referência de estilo</span>
+                                    <span className="text-muted-foreground mt-1 block">
+                                        A IA deve criar questões originais, sem copiar itens existentes, e só citar fontes que conseguir verificar.
+                                    </span>
+                                </span>
+                            </label>
+                        </section>
+
                         <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-950">
                             <h3 className="mb-2 flex items-center gap-2 font-semibold">
                                 <Info className="size-4" />
@@ -344,10 +466,10 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                                     size="sm"
                                     className="absolute top-2 right-6 z-10"
                                     onClick={handleCopyPrompt}
-                                    aria-label={promptCopied ? 'Prompt copiado' : 'Copiar prompt'}
+                                    aria-label={promptCopied ? 'Prompt copiado' : 'Copiar prompt configurado'}
                                 >
                                     {promptCopied ? <Check /> : <Copy />}
-                                    {promptCopied ? 'Copiado' : 'Copiar'}
+                                    {promptCopied ? 'Prompt copiado' : 'Copiar prompt configurado'}
                                 </Button>
                                 <pre className="bg-muted max-h-80 overflow-auto rounded-lg border p-4 pt-12 text-xs leading-relaxed break-words whitespace-pre-wrap">
                                     {promptWithContentCodes}
