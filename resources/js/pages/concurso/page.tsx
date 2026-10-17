@@ -50,7 +50,7 @@ Com base no edital e no material anexados, gere exatamente a quantidade de quest
 }
 
 Regras obrigatórias:
-- Gere somente questões objetivas, com de 2 a 5 alternativas identificadas por A, B, C, D ou E.
+- Gere somente questões objetivas, com de 4 a 5 alternativas identificadas por A, B, C, D ou E.
 - Cada questão deve ter exatamente uma alternativa correta; use true apenas nela e false nas demais.
 - Em "conteudo_codigo", use exatamente o código de um conteúdo existente no concurso.
 - Preencha "origem" com a banca/fonte ou "Questão inédita"; informe a dificuldade como "Fácil", "Média" ou "Difícil".
@@ -210,12 +210,6 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
                 <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="space-y-3">
-                        <Button variant="outline" size="sm" asChild>
-                            <Link href={route('homePage')}>
-                                <ArrowLeft />
-                                Voltar aos concursos
-                            </Link>
-                        </Button>
                         <div className="space-y-1">
                             <h1 className="text-foreground text-2xl font-semibold tracking-tight">{concurso.titulo}</h1>
                             <p className="text-muted-foreground text-sm">Matérias, conteúdos e questões deste concurso.</p>
