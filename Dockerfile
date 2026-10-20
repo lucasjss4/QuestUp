@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
+    libpq-dev \
     zip \
     unzip \
     nodejs \
@@ -16,8 +17,8 @@ RUN apt-get update && apt-get install -y \
 # Limpar cache do apt
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 2. Instalar extensões necessárias do PHP
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
+# 2. Adicione pdo_pgsql e pgsql na instalação de extensões do PHP:
+RUN docker-php-ext-install pdo_pgsql pgsql pdo_mysql mbstring exif pcntl bcmath gd
 
 # 3. Obter o Composer mais recente
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
