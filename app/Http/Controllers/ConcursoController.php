@@ -11,6 +11,7 @@ use App\Models\Questao;
 use App\Models\Simulado;
 use App\Models\SimuladoQuestao;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -213,10 +214,28 @@ class ConcursoController extends Controller
             ])
             ->findOrFail($concurso);
 
+        $acompanhamentoPorMateria = DB::table('simulado_questaos')
+            ->join('simulados', 'simulados.id', '=', 'simulado_questaos.simulado_id')
+            ->join('questaos', 'questaos.id', '=', 'simulado_questaos.questao_id')
+            ->join('conteudos', 'conteudos.id', '=', 'questaos.conteudo_id')
+            ->where('simulados.concurso_id', $concurso->id)
+            ->whereNotNull('simulados.concluido_em')
+            ->whereNotNull('simulado_questaos.opcao_marcada')
+            ->groupBy('conteudos.materia_id')
+            ->select('conteudos.materia_id')
+            ->selectRaw('COUNT(*) as respondidas_count')
+            ->selectRaw('COUNT(DISTINCT simulado_questaos.questao_id) as questoes_respondidas_count')
+            ->selectRaw('SUM(CASE WHEN simulado_questaos.acerto = ? THEN 1 ELSE 0 END) as acertos_count', [true])
+            ->get()
+            ->keyBy('materia_id');
+
         $materias = $concurso->concursoConteudo
             ->groupBy(fn (ConcursoConteudo $vinculo) => $vinculo->conteudo->materia->id)
-            ->map(function ($vinculos) {
+            ->map(function ($vinculos, $materiaId) use ($acompanhamentoPorMateria) {
                 $materia = $vinculos->first()->conteudo->materia;
+                $estatisticas = $acompanhamentoPorMateria->get($materiaId);
+                $respondidasCount = (int) ($estatisticas->respondidas_count ?? 0);
+                $acertosCount = (int) ($estatisticas->acertos_count ?? 0);
 
                 return [
                     'id' => $materia->id,
@@ -224,11 +243,27 @@ class ConcursoController extends Controller
                     'descricao' => $materia->Descricao,
                     'conteudos_count' => $vinculos->count(),
                     'questoes_count' => $vinculos->sum(fn (ConcursoConteudo $vinculo) => $vinculo->conteudo->questao_count),
+                    'questoes_respondidas_count' => (int) ($estatisticas->questoes_respondidas_count ?? 0),
+                    'respondidas_count' => $respondidasCount,
+                    'acertos_count' => $acertosCount,
+                    'desempenho_percentual' => $respondidasCount > 0 ? round(($acertosCount / $respondidasCount) * 100) : null,
                     'conteudos' => $vinculos->map(fn (ConcursoConteudo $vinculo) => [
                         'codigo' => $vinculo->conteudo->Codigo,
                         'nome' => $vinculo->conteudo->Nome,
                     ])->values(),
                 ];
+            })
+            ->sort(function (array $first, array $second) {
+                if ($first['desempenho_percentual'] === null || $second['desempenho_percentual'] === null) {
+                    if ($first['desempenho_percentual'] === $second['desempenho_percentual']) {
+                        return strcasecmp($first['nome'], $second['nome']);
+                    }
+
+                    return $first['desempenho_percentual'] === null ? 1 : -1;
+                }
+
+                return $first['desempenho_percentual'] <=> $second['desempenho_percentual']
+                    ?: strcasecmp($first['nome'], $second['nome']);
             })
             ->values();
 
@@ -236,6 +271,87 @@ class ConcursoController extends Controller
             'concurso' => $concurso->only(['id', 'titulo', 'data_concurso']),
             'materias' => $materias,
             'questoesCount' => $materias->sum('questoes_count'),
+        ]);
+    }
+
+    public function subject(int $concurso, int $materia)
+    {
+        $concurso = Concurso::query()
+            ->where('user_id', Auth::id())
+            ->findOrFail($concurso);
+        $materia = Materia::query()
+            ->whereHas('conteudo.concursoConteudo', fn ($query) => $query->where('concurso_id', $concurso->id))
+            ->findOrFail($materia);
+        $conteudos = Conteudo::query()
+            ->where('materia_id', $materia->id)
+            ->whereHas('concursoConteudo', fn ($query) => $query->where('concurso_id', $concurso->id))
+            ->withCount([
+                'questao' => fn ($query) => $query->whereHas(
+                    'conteudo.concursoConteudo',
+                    fn ($query) => $query->where('concurso_id', $concurso->id),
+                ),
+            ])
+            ->get(['id', 'Nome', 'Descricao', 'Codigo']);
+
+        $estatisticasPorConteudo = DB::table('simulado_questaos')
+            ->join('simulados', 'simulados.id', '=', 'simulado_questaos.simulado_id')
+            ->join('questaos', 'questaos.id', '=', 'simulado_questaos.questao_id')
+            ->where('simulados.concurso_id', $concurso->id)
+            ->whereNotNull('simulados.concluido_em')
+            ->whereNotNull('simulado_questaos.opcao_marcada')
+            ->whereIn('questaos.conteudo_id', $conteudos->pluck('id'))
+            ->groupBy('questaos.conteudo_id')
+            ->select('questaos.conteudo_id')
+            ->selectRaw('COUNT(*) as respondidas_count')
+            ->selectRaw('COUNT(DISTINCT simulado_questaos.questao_id) as questoes_respondidas_count')
+            ->selectRaw('SUM(CASE WHEN simulado_questaos.acerto = ? THEN 1 ELSE 0 END) as acertos_count', [true])
+            ->selectRaw('MAX(simulados.concluido_em) as ultima_resposta_em')
+            ->get()
+            ->keyBy('conteudo_id');
+
+        $conteudos = $conteudos
+            ->map(function (Conteudo $conteudo) use ($estatisticasPorConteudo) {
+                $estatisticas = $estatisticasPorConteudo->get($conteudo->id);
+                $respondidasCount = (int) ($estatisticas->respondidas_count ?? 0);
+                $acertosCount = (int) ($estatisticas->acertos_count ?? 0);
+
+                return [
+                    'id' => $conteudo->id,
+                    'nome' => $conteudo->Nome,
+                    'descricao' => $conteudo->Descricao,
+                    'questoes_count' => $conteudo->questao_count,
+                    'questoes_respondidas_count' => (int) ($estatisticas->questoes_respondidas_count ?? 0),
+                    'respondidas_count' => $respondidasCount,
+                    'acertos_count' => $acertosCount,
+                    'erros_count' => $respondidasCount - $acertosCount,
+                    'desempenho_percentual' => $respondidasCount > 0 ? round(($acertosCount / $respondidasCount) * 100) : null,
+                    'ultima_resposta_em' => $estatisticas?->ultima_resposta_em
+                        ? Carbon::parse($estatisticas->ultima_resposta_em)->toDateString()
+                        : null,
+                ];
+            })
+            ->sort(function (array $first, array $second) {
+                if ($first['desempenho_percentual'] === null || $second['desempenho_percentual'] === null) {
+                    if ($first['desempenho_percentual'] === $second['desempenho_percentual']) {
+                        return strcasecmp($first['nome'], $second['nome']);
+                    }
+
+                    return $first['desempenho_percentual'] === null ? 1 : -1;
+                }
+
+                return $second['desempenho_percentual'] <=> $first['desempenho_percentual']
+                    ?: strcasecmp($first['nome'], $second['nome']);
+            })
+            ->values();
+
+        return Inertia::render('concurso/materia', [
+            'concurso' => $concurso->only(['id', 'titulo']),
+            'materia' => [
+                'id' => $materia->id,
+                'nome' => $materia->Nome,
+                'descricao' => $materia->Descricao,
+            ],
+            'conteudos' => $conteudos,
         ]);
     }
 

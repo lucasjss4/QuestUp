@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, BookOpen, Check, Copy, Info, Play, Upload } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, Copy, Info, Play, Upload } from 'lucide-react';
 import { useState } from 'react';
 
 type Concurso = {
@@ -20,6 +20,10 @@ type Materia = {
     descricao: string;
     conteudos_count: number;
     questoes_count: number;
+    questoes_respondidas_count: number;
+    respondidas_count: number;
+    acertos_count: number;
+    desempenho_percentual: number | null;
     conteudos: { codigo: string; nome: string }[];
 };
 
@@ -105,9 +109,11 @@ export default function ConcursoPage({ concurso, materias, questoesCount }: Conc
 Parâmetros obrigatórios:
 - Número de questões previsto no edital (quantidade mínima): ${minimumQuestions || '[INFORME A QUANTIDADE DO EDITAL]'}.
 - Gere exatamente ${difficultyTotal} questões: ${difficultyCounts.facil} fáceis, ${difficultyCounts.media} médias e ${difficultyCounts.dificil} difíceis.
-${usePastExams
-    ? '- Se tiver acesso à internet, consulte provas anteriores públicas da banca organizadora para reproduzir o perfil e o nível de cobrança. Informe a banca, o ano e a fonte consultada em "origem" somente quando puder verificá-los. Se não tiver acesso, não invente fontes e baseie-se no edital e nos materiais anexados.'
-    : '- Baseie-se somente no edital e nos materiais anexados; não pesquise provas anteriores.'}
+${
+    usePastExams
+        ? '- Se tiver acesso à internet, consulte provas anteriores públicas da banca organizadora para reproduzir o perfil e o nível de cobrança. Informe a banca, o ano e a fonte consultada em "origem" somente quando puder verificá-los. Se não tiver acesso, não invente fontes e baseie-se no edital e nos materiais anexados.'
+        : '- Baseie-se somente no edital e nos materiais anexados; não pesquise provas anteriores.'
+}
 
 Códigos de conteúdo disponíveis para usar no campo "conteudo_codigo":
 ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteudo.codigo}: ${materia.nome} — ${conteudo.nome}`)).join('\n')}`;
@@ -249,6 +255,106 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                     </CardHeader>
                 </Card>
 
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Acompanhamento por matéria</CardTitle>
+                        <CardDescription>
+                            Desempenho calculado pelas respostas marcadas em simulados concluídos. A lista começa pelas matérias que precisam de mais
+                            atenção.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        {materias.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full min-w-[640px] text-left text-sm">
+                                    <thead className="bg-muted/50 text-muted-foreground border-b text-xs font-semibold tracking-wide uppercase">
+                                        <tr>
+                                            <th scope="col" className="px-4 py-3">
+                                                Matéria
+                                            </th>
+                                            <th scope="col" className="px-4 py-3">
+                                                Questões já respondidas
+                                            </th>
+                                            <th scope="col" className="px-4 py-3">
+                                                Desempenho
+                                            </th>
+                                            <th scope="col" className="px-4 py-3">
+                                                Detalhes
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-border divide-y">
+                                        {materias.map((materia) => {
+                                            const percentual = materia.desempenho_percentual;
+                                            return (
+                                                <tr key={materia.id} className="hover:bg-muted/40 transition-colors">
+                                                    <th scope="row" className="px-4 py-3 font-medium">
+                                                        {materia.nome}
+                                                    </th>
+                                                    <td className="px-4 py-3">
+                                                        <p>
+                                                            {materia.questoes_respondidas_count} de {materia.questoes_count} questões
+                                                        </p>
+                                                        {materia.respondidas_count > materia.questoes_respondidas_count && (
+                                                            <p className="text-muted-foreground mt-1 text-xs">
+                                                                {materia.respondidas_count} respostas contabilizadas
+                                                            </p>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        {percentual === null ? (
+                                                            <span className="text-muted-foreground">Sem dados</span>
+                                                        ) : (
+                                                            <div className="min-w-32 space-y-1.5">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div
+                                                                        role="progressbar"
+                                                                        aria-label={`Desempenho em ${materia.nome}`}
+                                                                        aria-valuemin={0}
+                                                                        aria-valuemax={100}
+                                                                        aria-valuenow={percentual}
+                                                                        className="bg-muted h-2 min-w-16 flex-1 overflow-hidden rounded-full"
+                                                                    >
+                                                                        <div
+                                                                            className="bg-primary h-full rounded-full"
+                                                                            style={{ width: `${percentual}%` }}
+                                                                        />
+                                                                    </div>
+                                                                    <span className="w-10 shrink-0 font-medium">{percentual}%</span>
+                                                                </div>
+                                                                <p className="text-muted-foreground text-xs">
+                                                                    {materia.acertos_count} de {materia.respondidas_count} respostas
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <Button variant="outline" size="sm" asChild>
+                                                            <Link
+                                                                href={route('concurso.materia.show', {
+                                                                    concurso: concurso.id,
+                                                                    materia: materia.id,
+                                                                })}
+                                                            >
+                                                                Ver detalhes
+                                                                <ArrowRight />
+                                                            </Link>
+                                                        </Button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="text-muted-foreground py-6 text-center text-sm">
+                                Adicione matérias e questões para começar a acompanhar seu desempenho.
+                            </p>
+                        )}
+                    </CardContent>
+                </Card>
+
                 <section className="space-y-4">
                     <div>
                         <h2 className="text-xl font-semibold tracking-tight">Matérias</h2>
@@ -363,7 +469,9 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                 <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
                     <DialogHeader>
                         <DialogTitle>Importar questões</DialogTitle>
-                        <DialogDescription>Configure a quantidade, a dificuldade e o estilo das questões antes de copiar o prompt para a IA.</DialogDescription>
+                        <DialogDescription>
+                            Configure a quantidade, a dificuldade e o estilo das questões antes de copiar o prompt para a IA.
+                        </DialogDescription>
                     </DialogHeader>
 
                     <div className="space-y-5 text-sm">
@@ -371,7 +479,8 @@ ${materias.flatMap((materia) => materia.conteudos.map((conteudo) => `- ${conteud
                             <div className="space-y-1">
                                 <h3 className="text-sm font-medium">Quantidade e nível de dificuldade</h3>
                                 <p className="text-muted-foreground text-sm">
-                                    Informe quantas questões há no edital. Esse será o total gerado. No centro da barra, a distribuição é 25% fáceis, 50% médias e 25% difíceis.
+                                    Informe quantas questões há no edital. Esse será o total gerado. No centro da barra, a distribuição é 25% fáceis,
+                                    50% médias e 25% difíceis.
                                 </p>
                             </div>
                             <div className="max-w-xs space-y-2">

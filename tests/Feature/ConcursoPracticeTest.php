@@ -74,7 +74,11 @@ class ConcursoPracticeTest extends TestCase
             ->get(route('concurso.show', $concurso->id))
             ->assertInertia(fn ($page) => $page
                 ->component('concurso/page')
-                ->where('materias.0.questoes_count', 3));
+                ->where('materias.0.questoes_count', 3)
+                ->where('materias.0.questoes_respondidas_count', 0)
+                ->where('materias.0.respondidas_count', 0)
+                ->where('materias.0.acertos_count', 0)
+                ->where('materias.0.desempenho_percentual', null));
 
         $this->post(route('concurso.simulado.start', $concurso->id), [
             'quantidades' => [$materia->id => 3],
@@ -116,6 +120,26 @@ class ConcursoPracticeTest extends TestCase
             'opcao_marcada' => null,
             'acerto' => null,
         ]);
+
+        $this->get(route('concurso.show', $concurso->id))
+            ->assertInertia(fn ($page) => $page
+                ->component('concurso/page')
+                ->where('materias.0.questoes_respondidas_count', 2)
+                ->where('materias.0.respondidas_count', 2)
+                ->where('materias.0.acertos_count', 1)
+                ->where('materias.0.desempenho_percentual', 50));
+
+        $this->get(route('concurso.materia.show', [$concurso->id, $materia->id]))
+            ->assertInertia(fn ($page) => $page
+                ->component('concurso/materia')
+                ->where('materia.nome', 'Português')
+                ->where('conteudos.0.nome', 'Gramática')
+                ->where('conteudos.0.questoes_count', 3)
+                ->where('conteudos.0.questoes_respondidas_count', 2)
+                ->where('conteudos.0.acertos_count', 1)
+                ->where('conteudos.0.erros_count', 1)
+                ->where('conteudos.0.desempenho_percentual', 50)
+                ->where('conteudos.0.ultima_resposta_em', now()->toDateString()));
 
         $this->get(route('concurso.simulado.show', [$concurso->id, $simulado->id]))
             ->assertInertia(fn ($page) => $page

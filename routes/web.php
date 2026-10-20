@@ -31,6 +31,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{concurso}/simulado', [ConcursoController::class, 'startPractice'])->name('concurso.simulado.start');
         Route::get('/{concurso}/simulado/{simulado}', [ConcursoController::class, 'practice'])->name('concurso.simulado.show');
         Route::post('/{concurso}/simulado/{simulado}/concluir', [ConcursoController::class, 'finishPractice'])->name('concurso.simulado.finish');
+        Route::get('/{concurso}/materia/{materia}', [ConcursoController::class, 'subject'])->name('concurso.materia.show');
         Route::get('/{concurso}', [ConcursoController::class, 'show'])->name('concurso.show');
         Route::post('/{concurso}/importar-questoes', [ConcursoController::class, 'importQuestions'])->name('concurso.import-questions');
         Route::get('/', [ConcursoController::class, 'index'])->name('concurso.index');
