@@ -46,9 +46,8 @@ RUN npm install && npm run build
 # 9. Ajustar permissões das pastas de cache e storage para o Apache
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
-# 10. Expor a porta 80
-EXPOSE 80
-
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+EXPOSE 80
 ENTRYPOINT ["entrypoint.sh"]

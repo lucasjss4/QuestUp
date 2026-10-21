@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ConcursoController;
 use App\Models\Concurso;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -9,6 +10,11 @@ use Inertia\Inertia;
 Route::get('/', function () {
     return Inertia::render('welcome');
 })->name('home');
+
+Route::get('/rodar-migrations', function () {
+    Artisan::call('migrate', ['--force' => true]);
+    return 'Migrations executadas com sucesso!<br><pre>' . Artisan::output() . '</pre>';
+});
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/home', function () {
